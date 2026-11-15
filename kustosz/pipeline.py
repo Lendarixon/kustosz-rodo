@@ -193,14 +193,22 @@ def run_pipeline(
                 continue
             res = classify_chunk(chunk, llama_url=llama_url)
             slm_ms += res.latency_ms
+            active_keep_texts: set[str] = set()
             for k in res.keep:
+                role_up = (k.role or "").upper()
+                if enabled_set is not None and role_up in enabled_set:
+                    for m in re.finditer(re.escape(k.text), text):
+                        a, b = m.start(), m.end()
+                        if not any(not (b <= d.start or a >= d.end) for d in det_spans):
+                            slm_spans.append(PiiSpan(a, b, role_up, text[a:b], source="bielik-4.5b", reason=f"ukryto rolę {role_up}"))
+                    continue
+                active_keep_texts.add(k.text.lower())
                 key = (k.text, k.role)
                 if key not in seen_keep:
                     seen_keep.add(key)
                     kept_all.append(k)
-            keep_texts = {k.text.lower() for k in res.keep}
             for f in res.redact:
-                if len(f.text) < 3 or f.text.lower() in keep_texts:
+                if len(f.text) < 3 or f.text.lower() in active_keep_texts:
                     continue
                 for m in re.finditer(re.escape(f.text), text):
                     a, b = m.start(), m.end()

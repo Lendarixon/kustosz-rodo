@@ -87,3 +87,20 @@ def test_custom_mask_styles_and_rules():
     assert "[USUNIĘTO:EMAIL]" in rep_rules.masked_text
     assert "[USUNIĘTO:WLASNE]" in rep_rules.masked_text
     assert "Projekt Alfa" not in rep_rules.masked_text
+
+
+def test_keep_role_can_be_masked_when_enabled():
+    sample = "Na podst. art. 10 KPA Sędzia Anna Nowak wzywa Jana Kowalskiego."
+    fake_slm = SlmResult(
+        redact=[SlmFinding("Jana Kowalskiego", "OSOBA", "strona")],
+        keep=[
+            SlmKeep("Sędzia Anna Nowak", "URZEDNIK"),
+            SlmKeep("art. 10 KPA", "PRZEPIS"),
+        ],
+        latency_ms=10,
+    )
+    with patch("kustosz.pipeline.classify_chunk", return_value=fake_slm):
+        rep = run_pipeline(sample, mode="irreversible", use_slm=True, enabled_kinds=["OSOBA", "URZEDNIK"])
+    assert "[OSOBA]" in rep.masked_text
+    assert "[URZEDNIK]" in rep.masked_text
+    assert "art. 10 KPA" in rep.masked_text

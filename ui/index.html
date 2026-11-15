@@ -57,6 +57,9 @@ mark.pii-keep{background:rgba(47,191,143,.24);border-bottom:2px solid #2fbf8f;co
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
 .chip{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--fg)}
 .chip.ok{border-color:rgba(47,191,143,.45);color:#7ef0c7}
+.chip.btn-chip{cursor:pointer;transition:.12s}
+.chip.btn-chip:hover{background:var(--hover);border-color:var(--acc2)}
+.chip.mask-chip{border-color:rgba(224,86,91,.45);color:#ffb3b6}
 .vault-wrap{display:none;flex-direction:column;gap:5px;max-height:145px;overflow:auto;background:rgba(0,0,0,.24);border:1px solid var(--line);border-radius:var(--r2);padding:8px}
 .vault-tbl{width:100%;border-collapse:collapse;font-size:11.5px;font-family:ui-monospace,Consolas,monospace}
 .vault-tbl td{padding:3px 6px;border-bottom:1px solid var(--line);color:var(--mut)}
@@ -131,11 +134,14 @@ mark.pii-keep{background:rgba(47,191,143,.24);border-bottom:2px solid #2fbf8f;co
         </select>
         <input id="customMaskText" class="inp-sm" type="text" style="display:none;" placeholder="Wpisz własny zamiennik, np. [USUNIĘTO] lub [RODO:{TYP}]">
         <details class="rules-box" id="rulesBox">
-          <summary>Reguły: co konkretnie i na co zamieniać</summary>
+          <summary>Co ukrywać, a czego nie ukrywać (kategorie i wyjątki)</summary>
+          <div style="font-size:11px;color:var(--mut);margin-top:7px;font-weight:600;">Co ukrywać (dane prywatne i numery):</div>
           <div class="rules-grid" id="rulesGrid"></div>
+          <div style="font-size:11px;color:var(--ok);margin-top:8px;font-weight:600;">Czego NIE ukrywać (zachowaj - odznacz, by ukryć):</div>
+          <div class="rules-grid" id="keepRolesGrid" style="max-height:110px;"></div>
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
-            <input id="customMaskList" class="inp-sm" type="text" placeholder="Zawsze zamaskuj (frazy po przecinku)">
-            <input id="customKeepList" class="inp-sm" type="text" placeholder="Nigdy nie zamazuj (wyjątki po przecinku)">
+            <input id="customMaskList" class="inp-sm" type="text" placeholder="Zawsze ukryj (frazy po przecinku)">
+            <input id="customKeepList" class="inp-sm" type="text" placeholder="Nigdy nie ukrywaj (wyjątki po przecinku)">
             <button class="btn" id="saveRulesBtn" style="display:none;padding:4px 9px;font-size:11.5px;" onclick="saveRulesOnly()">Zapisz reguły w ustawieniach</button>
           </div>
         </details>
@@ -197,12 +203,28 @@ const KIND_DEFS = [
   ['TELEFON', 'Numer telefonu']
 ];
 
+const KEEP_ROLE_DEFS = [
+  ['URZEDNIK', 'Urzędnicy i sędziowie (URZEDNIK)'],
+  ['INSTYTUCJA', 'Urzędy, sądy i firmy (INSTYTUCJA)'],
+  ['PRZEPIS', 'Przepisy i sygnatury (PRZEPIS)']
+];
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function initRulesGrid(){
   document.getElementById('rulesGrid').innerHTML = KIND_DEFS.map(([k, lbl])=>`
     <div class="rule-row">
       <input type="checkbox" class="kind-cb" data-kind="${k}" checked>
       <span>${lbl}</span>
       <input type="text" class="kind-repl" data-kind="${k}" placeholder="domyślnie">
+    </div>`).join('');
+  document.getElementById('keepRolesGrid').innerHTML = KEEP_ROLE_DEFS.map(([k, lbl])=>`
+    <div class="rule-row">
+      <input type="checkbox" class="keep-role-cb" data-kind="${k}" checked>
+      <span>${lbl}</span>
+      <input type="text" class="kind-repl" data-kind="${k}" placeholder="gdy ukryte">
     </div>`).join('');
 }
 initRulesGrid();
@@ -216,7 +238,9 @@ function syncMaskUi(){
 syncMaskUi();
 
 function collectRules(){
-  const enabled_kinds = [...document.querySelectorAll('.kind-cb:checked')].map(el=>el.dataset.kind);
+  const hideMask = [...document.querySelectorAll('.kind-cb:checked')].map(el=>el.dataset.kind);
+  const hideKeepRoles = [...document.querySelectorAll('.keep-role-cb:not(:checked)')].map(el=>el.dataset.kind);
+  const enabled_kinds = [...hideMask, ...hideKeepRoles];
   const kind_replacements = {};
   document.querySelectorAll('.kind-repl').forEach(el=>{
     if(el.value.trim()) kind_replacements[el.dataset.kind] = el.value.trim();
@@ -239,6 +263,7 @@ function applyRulesToUi(rules){
   if(Array.isArray(rules.enabled_kinds)){
     const s = new Set(rules.enabled_kinds);
     document.querySelectorAll('.kind-cb').forEach(cb=>{ cb.checked = s.has(cb.dataset.kind); });
+    document.querySelectorAll('.keep-role-cb').forEach(cb=>{ cb.checked = !s.has(cb.dataset.kind); });
   }
   const rep = rules.kind_replacements || {};
   document.querySelectorAll('.kind-repl').forEach(el=>{ el.value = rep[el.dataset.kind] || ''; });
@@ -422,17 +447,37 @@ async function runAnon(){
     document.getElementById('vaultWrap').style.display = entries.length ? 'flex' : 'none';
     document.getElementById('vaultTbl').innerHTML = entries.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('');
 
-    const cntChips = Object.entries(d.counts||{}).map(([k,v])=>`<span class="chip">${k}: ${v}</span>`).join('');
-    const keepChips = (d.kept||[]).map(k=>`<span class="chip ok">${k.text} (${k.role})</span>`).join('');
-    document.getElementById('auditBox').innerHTML =
-      `<div class="chips">${cntChips || '<span class="chip">Brak PII</span>'}${keepChips}</div>` +
+    const uniqRed = [];
+    const seenRed = new Set();
+    for(const item of (d.redactions||[])){
+      if(!seenRed.has(item.original)){ seenRed.add(item.original); uniqRed.push(item); }
+    }
+    const redChips = uniqRed.map(item=>`<button type="button" class="chip btn-chip mask-chip" title="Kliknij, aby NIE ukrywać tej frazy" data-act="keep" data-val="${escHtml(item.original)}">✕ ${escHtml(item.original)} (${escHtml(item.kind)})</button>`).join('');
+    const keepChips = (d.kept||[]).map(k=>`<button type="button" class="chip btn-chip ok" title="Kliknij, aby UKRYĆ tę frazę" data-act="mask" data-val="${escHtml(k.text)}">+ ${escHtml(k.text)} (${escHtml(k.role)})</button>`).join('');
+    const box = document.getElementById('auditBox');
+    box.innerHTML =
+      `<div style="font-size:11px;color:var(--dim);margin-bottom:5px;">Kliknij wykrytą frazę, aby ją zachować lub wymusić ukrycie:</div>` +
+      `<div class="chips">${redChips || '<span class="chip">Brak PII</span>'}${keepChips}</div>` +
       `<b>Czas SLM:</b> ${d.slm_latency_ms} ms · <b>Redakcje w pliku:</b> ${d.doc_redactions||0}<br>` +
       `<b>SHA-256:</b> ${(d.doc_sha256||'').slice(0,16)}… → ${(d.masked_sha256||'').slice(0,16)}…`;
+    box.querySelectorAll('.btn-chip').forEach(ch=>ch.addEventListener('click', ()=>togglePhraseRule(ch.dataset.val, ch.dataset.act)));
   } catch(err) {
     document.getElementById('diffView').innerHTML = `<div class="err-box">Błąd anonimizacji: ${err.message}</div>`;
   } finally {
     btn.disabled = false; btn.textContent = 'Anonimizuj dokument';
   }
+}
+
+function togglePhraseRule(val, act){
+  const parse = id => document.getElementById(id).value.split(',').map(s=>s.trim()).filter(Boolean);
+  let masks = parse('customMaskList').filter(x=>x.toLowerCase()!==val.toLowerCase());
+  let keeps = parse('customKeepList').filter(x=>x.toLowerCase()!==val.toLowerCase());
+  if(act === 'keep') keeps.push(val);
+  else masks.push(val);
+  document.getElementById('customMaskList').value = masks.join(', ');
+  document.getElementById('customKeepList').value = keeps.join(', ');
+  document.getElementById('rulesBox').open = true;
+  runAnon();
 }
 
 async function runRestore(){
