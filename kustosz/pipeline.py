@@ -81,10 +81,15 @@ def _apply_pre_mask(text: str, spans: list[PiiSpan]) -> tuple[str, list[tuple[in
 
 
 def _build_highlighted_html(text: str, redactions: list[RedactionItem], kept: list[SlmKeep]) -> str:
-    """Buduje podgląd HTML: czerwony = zamaskowane SLM, niebieski = deterministyczne PII, zielony = zachowany kontekst."""
+    """Buduje podgląd HTML: czerwony = zamaskowane SLM, niebieski = deterministyczne PII, bursztynowy = własne reguły, zielony = zachowany kontekst."""
     events: list[tuple[int, int, str, str]] = []
     for r in redactions:
-        cls = "pii-det" if r.source == "deterministic" else "pii-slm"
+        if r.source == "deterministic":
+            cls = "pii-det"
+        elif r.source == "user":
+            cls = "pii-user"
+        else:
+            cls = "pii-slm"
         tip = f"{r.kind} ({r.source}): {r.reason}"
         events.append((r.start, r.end, cls, tip))
 
@@ -122,25 +127,65 @@ def restore_text(masked_text: str, vault: dict[str, str]) -> str:
     return res
 
 
+def _format_token(
+    kind: str,
+    value: str,
+    mode: str,
+    mask_style: str,
+    custom_text: str,
+    kind_replacements: dict[str, str],
+    counters: dict[str, int],
+    val_to_tok: dict[tuple[str, str], str],
+    vault: dict[str, str],
+) -> str:
+    if mode == "reversible":
+        key = (kind, value)
+        if key not in val_to_tok:
+            counters[kind] = counters.get(kind, 0) + 1
+            tok = f"<{kind}_{counters[kind]}>"
+            val_to_tok[key] = tok
+            vault[tok] = value
+        return val_to_tok[key]
+
+    override = (kind_replacements.get(kind) or "").strip()
+    if override:
+        return override.replace("{TYP}", kind)
+    if mask_style == "blocks":
+        return "█" * min(max(len(value), 4), 14)
+    if mask_style == "stars":
+        return "*" * min(max(len(value), 4), 14)
+    if mask_style == "custom" and custom_text.strip():
+        return custom_text.strip().replace("{TYP}", kind)
+    return f"[{kind}]"
+
+
 def run_pipeline(
     raw_text: str,
     mode: str = "irreversible",
     use_slm: bool = True,
     llama_url: str = "http://127.0.0.1:8792",
+    mask_style: str = "label",
+    custom_text: str = "",
+    enabled_kinds: list[str] | set[str] | None = None,
+    custom_mask: list[str] | None = None,
+    custom_keep: list[str] | None = None,
+    kind_replacements: dict[str, str] | None = None,
 ) -> PipelineReport:
     """Wykonuje pełną anonimizację / pseudonimizację dokumentu."""
     canon = canonicalize(raw_text)
     text = canon.text
     det_spans = find_deterministic(text)
 
+    enabled_set = {k.upper() for k in enabled_kinds} if enabled_kinds is not None else None
+    keep_custom = {p.strip().lower() for p in (custom_keep or []) if p and p.strip()}
+    mask_custom = [p.strip() for p in (custom_mask or []) if p and p.strip()]
+    repl_map = {k.upper(): v for k, v in (kind_replacements or {}).items()}
+
     slm_spans: list[PiiSpan] = []
     kept_all: list[SlmKeep] = []
     slm_ms = 0
 
     if use_slm and text.strip():
-        # Pre-maskujemy deterministyczne PII, mapujemy indeksy na oryginalny `text`
-        # Prościej: uruchamiamy SLM na oryginalnych chunkach? Nie — lepiej na pre-maskowanych,
-        # a znalezione podciągi SLM dopasowujemy bezpośrednio w `text` (poza det_spans).
         pre_text, _ = _apply_pre_mask(text, det_spans)
         seen_keep: set[tuple[str, str]] = set()
         for _, chunk in _chunk_text(pre_text):
@@ -163,8 +208,26 @@ def run_pipeline(
                         continue
                     slm_spans.append(PiiSpan(a, b, f.kind, text[a:b], source="bielik-4.5b", reason=f.reason))
 
-    all_spans = det_spans + slm_spans
-    all_spans.sort(key=lambda s: (s.start, 0 if s.source == "deterministic" else 1, -(s.end - s.start)))
+    for term in keep_custom:
+        kept_all.append(SlmKeep(term, "WYJATEK"))
+
+    user_spans: list[PiiSpan] = []
+    for term in mask_custom:
+        for m in re.finditer(re.escape(term), text, flags=re.IGNORECASE):
+            user_spans.append(PiiSpan(m.start(), m.end(), "WLASNE", text[m.start():m.end()], source="user", reason="reguła użytkownika"))
+
+    def _allowed(s: PiiSpan) -> bool:
+        val_low = s.value.strip().lower()
+        if any(val_low == k or (len(k) >= 3 and k in val_low) for k in keep_custom):
+            return False
+        if s.source == "user":
+            return True
+        if enabled_set is not None and s.kind.upper() not in enabled_set:
+            return False
+        return True
+
+    all_spans = [s for s in (user_spans + det_spans + slm_spans) if _allowed(s)]
+    all_spans.sort(key=lambda s: (s.start, {"user": 0, "deterministic": 1}.get(s.source, 2), -(s.end - s.start)))
 
     merged: list[PiiSpan] = []
     last = -1
@@ -173,7 +236,6 @@ def run_pipeline(
             merged.append(s)
             last = s.end
 
-    # Budowa wyniku i sejfu
     counters: dict[str, int] = {}
     val_to_tok: dict[tuple[str, str], str] = {}
     vault: dict[str, str] = {}
@@ -185,16 +247,7 @@ def run_pipeline(
     for s in merged:
         out_parts.append(text[pos:s.start])
         counts[s.kind] = counts.get(s.kind, 0) + 1
-        if mode == "reversible":
-            key = (s.kind, s.value)
-            if key not in val_to_tok:
-                counters[s.kind] = counters.get(s.kind, 0) + 1
-                tok = f"<{s.kind}_{counters[s.kind]}>"
-                val_to_tok[key] = tok
-                vault[tok] = s.value
-            tok = val_to_tok[key]
-        else:
-            tok = f"[{s.kind}]"
+        tok = _format_token(s.kind, s.value, mode, mask_style, custom_text, repl_map, counters, val_to_tok, vault)
         out_parts.append(tok)
         redactions.append(RedactionItem(s.start, s.end, s.kind, s.value, tok, s.source, s.reason))
         pos = s.end

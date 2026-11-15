@@ -88,6 +88,15 @@ def current_settings() -> dict:
     gpu = "cpu" if os.environ.get("KUSTOSZ_CPU") == "1" else cfg.get("gpu", "auto")
     threads = int(os.environ.get("KUSTOSZ_THREADS", cfg.get("threads", max(4, (os.cpu_count() or 8) // 2))))
     port = int(os.environ.get("KUSTOSZ_PORT", cfg.get("port", 8791)))
+    default_rules = {
+        "mask_style": "label",
+        "custom_text": "",
+        "enabled_kinds": ["PESEL", "NIP", "REGON", "IBAN", "DOWOD", "EMAIL", "TELEFON", "OSOBA", "ADRES", "WRAZLIWE"],
+        "kind_replacements": {},
+        "custom_mask": [],
+        "custom_keep": [],
+    }
+    rules = {**default_rules, **(cfg.get("rules") or {})}
     return {
         "model": model if model in ("gemma", "bielik") else "gemma",
         "gpu": gpu if gpu in ("auto", "cpu") else "auto",
@@ -95,6 +104,7 @@ def current_settings() -> dict:
         "port": port,
         "llama_bin": str(_find_llama()),
         "gguf_path": str(_find_gguf(model)),
+        "rules": rules,
     }
 
 
@@ -298,24 +308,43 @@ class Handler(BaseHTTPRequestHandler):
         data = json.loads(self.rfile.read(length).decode("utf-8"))
         if self.path == "/api/settings":
             cfg = load_cfg()
-            if data.get("model") in ("gemma", "bielik"):
+            engine_changed = False
+            if data.get("model") in ("gemma", "bielik") and data["model"] != cfg.get("model"):
                 cfg["model"] = data["model"]
-            if data.get("gpu") in ("auto", "cpu"):
+                engine_changed = True
+            if data.get("gpu") in ("auto", "cpu") and data["gpu"] != cfg.get("gpu"):
                 cfg["gpu"] = data["gpu"]
-            if isinstance(data.get("threads"), int) and 1 <= data["threads"] <= 64:
+                engine_changed = True
+            if isinstance(data.get("threads"), int) and 1 <= data["threads"] <= 64 and data["threads"] != cfg.get("threads"):
                 cfg["threads"] = data["threads"]
+                engine_changed = True
+            if isinstance(data.get("rules"), dict):
+                cfg["rules"] = data["rules"]
             save_cfg(cfg)
-            stop_llama()
-            start_llama()
+            if engine_changed:
+                stop_llama()
+                start_llama()
             self._send_json(200, {"ok": True, "model": _ACTIVE_MODEL, "device": _DEVICE_LABEL, "settings": current_settings()})
             return
 
         if self.path == "/api/anonymize":
+            rules = current_settings()["rules"]
             text = data.get("text", "")
             mode = data.get("mode", "irreversible")
             use_slm = bool(data.get("use_slm", True))
             doc_id = data.get("doc_id")
-            rep = run_pipeline(text, mode=mode, use_slm=use_slm, llama_url=LLAMA_URL)
+            rep = run_pipeline(
+                text,
+                mode=mode,
+                use_slm=use_slm,
+                llama_url=LLAMA_URL,
+                mask_style=data.get("mask_style", rules["mask_style"]),
+                custom_text=data.get("custom_text", rules["custom_text"]),
+                enabled_kinds=data.get("enabled_kinds", rules["enabled_kinds"]),
+                custom_mask=data.get("custom_mask", rules["custom_mask"]),
+                custom_keep=data.get("custom_keep", rules["custom_keep"]),
+                kind_replacements=data.get("kind_replacements", rules["kind_replacements"]),
+            )
 
             res_id = uuid.uuid4().hex[:12]
             out_pages_b64 = None

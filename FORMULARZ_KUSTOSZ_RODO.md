@@ -1,54 +1,49 @@
-# Formularz zgłoszeniowy — Bielik Awards 2026 (Kategoria c: SLM <10B)
+=== Nazwa projektu ===
+Linda Kustosz RODO - lokalny strażnik kontekstowej anonimizacji PDF, DOCX i skanów
 
-## Nazwa projektu *
-Linda Kustosz RODO
+=== Skrócony opis projektu ===
+Linda Kustosz RODO to działający w 100% lokalnie (bez internetu i chmury) strażnik prywatności dla urzędów, sądów, kadr, kancelarii i przychodni. Wrzucasz PDF, DOCX, TXT albo skan, a program przed wysyłką do BIP, kontrahenta czy chmury AI fizycznie usuwa dane osobowe z dokumentu.
 
-## Skrócony opis projektu *
-Linda Kustosz RODO to lokalny (100% offline) firewall prywatności do fizycznej anonimizacji dokumentów PDF, DOCX, TXT i skanów (OCR). Zanim pismo urzędowe (BIP), sądowe, kadrowe lub umowa opuści organizację, system oczyszcza tekst z artefaktów PDF i homoglifów, deterministycznie weryfikuje sumy kontrolne (PESEL, NIP, REGON, IBAN, dowód osobisty), a następnie wykorzystuje lokalny model SLM (<10B: wymiennie Gemma-4-E4B-it lub Bielik-4.5B-v3 w llama.cpp) do odróżnienia danych prywatnych (odmienne formy imion, nazwisk, adresy, diagnozy) od kontekstu publiczno-prawnego (sędzia, burmistrz, urząd, artykuł ustawy).
+Najważniejsza zasada: mały model językowy (SLM <10B: Gemma-4-E4B albo Bielik-4.5B-v3 w llama.cpp) nigdy nie przepisuje tekstu z pamięci. Zamiast tego działa jak precyzyjny klasyfikator: odróżnia dane prywatne w polskiej odmianie ("Anny Zielińskiej", "astmy oskrzelowej", prywatne adresy) od kontekstu publiczno-prawnego ("Burmistrz Miasta", "Sędzia Sądu Rejonowego", "art. 104 KPA"), którego nie wolno zamazać. Wcześniej kod oczyszcza tekst z artefaktów PDF i weryfikuje sumy kontrolne (PESEL, NIP, REGON, IBAN, dowód osobisty). Samą redakcję wykonuje deterministyczny Python - w PDF fizycznie usuwa tekst przez PyMuPDF, a w DOCX podmienia go w akapitach i tabelach. W opcjach wybierasz, co konkretnie i na co zamienić: czarne bloki (██████), etykiety ([OSOBA]), gwiazdki, własny tekst albo odwracalne tokeny <OSOBA_1> z lokalnym sejfem i audytem SHA-256.
 
-Kluczowa zasada bezpieczeństwa: model SLM nigdy nie przepisuje tekstu z pamięci — zwraca jedynie dokładne podciągi w formacie NDJSON, a fizyczne zaczernienie tekstu w PDF (`apply_redactions` w PyMuPDF) oraz podmianę w DOCX wykonuje deterministyczny kod w Pythonie z lokalnym sejfem pseudonimizacji i audytem SHA-256.
+Na 12 polskich dokumentach testowych (30 encji wrażliwych + 21 chronionych) same reguły wykryły 33,3%, Bielik-4.5B podniósł wynik do 90,0% (ok. 2,9 s GPU), a domyślna Gemma-4-E4B osiągnęła 96,7% i 0,0% błędnych zamazań (ok. 1,1 s GPU).
 
-W testach na 12 polskich dokumentach (30 encji wrażliwych, 21 encji kontekstu prawnego) same reguły wykryły 33,3% danych, Bielik-4.5B-v3 osiągnął 90,0% (4,8% błędnych maskowań; ~2,9 s GPU), a domyślna Gemma-4-E4B-it osiągnęła 96,7% i 0,0% błędnych zamazań (~1,1 s GPU).
+=== Szczegółowy opis projektu wraz z efektami wdrożenia ===
+SKĄD POMYSŁ
+W urzędzie (BIP), sądzie, dziale kadr czy kancelarii codziennie trzeba usuwać dane osobowe (RODO art. 25 i 32) z pism, decyzji i umów. Wysłanie dokumentu do płatnego API w chmurze łamie RODO jeszcze przed anonimizacją. Z kolei zwykłe wyrażenia regularne w języku polskim nie radzą sobie z dwoma rzeczami naraz:
+- przepuszczają odmienione imiona, nazwiska, prywatne adresy i diagnozy ("Piotra Nowaka", "ul. Polna 5", "cukrzycy typu 2"),
+- potrafią zamazać nazwisko sędziego, burmistrza, nazwę urzędu albo numer artykułu ustawy, psując dokument do publikacji w BIP.
+Ponadto zwykłe "czarne prostokąty" w edytorach PDF często tylko zakrywają tekst wizualnie, a dane da się skopiować spod spodu. Chciałem zrobić narzędzie, które uruchamia się jednym kliknięciem na komputerze biurowym i rozwiązuje oba problemy naraz.
 
-Demo (GPU T4): https://ninjagovlad--kustosz-rodo-demo-kustoszservice-web.us-east.modal.run/
-GitHub + instalator: https://github.com/Lendarixon/kustosz-rodo
+JAK TO DZIAŁA
+1. Ekstrakcja i czyszczenie dokumentów: obsługa PDF (PyMuPDF), DOCX (python-docx), TXT oraz skanów (Tesseract OCR pol+eng). Moduł kanonizacji Unicode usuwa znaki zerowej szerokości, nietypowe spacje i podmiany homoglifów (np. cyrylica wstawiona zamiast łacińskich liter w "brudnych" PDF-ach).
+2. Walidacja sum kontrolnych: przed wysłaniem treści do modelu program sprawdza matematycznie PESEL, NIP, REGON, polski IBAN, dowód osobisty oraz e-mail i telefon. Wykryte identyfikatory zamienia na bezpieczne tokeny (<PESEL_1>, <IBAN_1>).
+3. Klasyfikator kontekstowy SLM (<10B): lokalny serwer llama.cpp (Gemma-4-E4B-it Q6_K domyślnie albo Bielik-4.5B-v3.0-Instruct Q6_K z naprawionym tokenizerem do wyboru w ustawieniach; Vulkan GPU lub CPU). Model zwraca wyłącznie obiekty NDJSON z podziałem na dane do ukrycia (OSOBA, ADRES, WRAZLIWE) i dane do zachowania (URZEDNIK, INSTYTUCJA, PRZEPIS).
+4. Ochrona przed halucynacjami i prawdziwa redakcja plików: Python sprawdza, czy wskazany podciąg istnieje dosłownie w tekście i nie należy do kategorii chronionych. W plikach PDF wykonuje fizyczną redakcję strumienia (add_redact_annot + apply_redactions w PyMuPDF, wynik *_RODO.pdf), w DOCX podmienia treść z zachowaniem układu (*_RODO.docx), a w UI pokazuje obok siebie oryginalny dokument, wersję wynikową oraz mapę różnic (niebieski: sumy kontrolne, czerwony: kontekst SLM, zielony: zachowany kontekst).
+5. Konfiguracja "co i na co zamieniać": użytkownik wybiera tryb nieodwracalny lub odwracalną pseudonimizację (<OSOBA_1> z lokalnym sejfem przywracania). W ustawieniach może dokładnie określić:
+- na co zamieniać: etykiety RODO ([OSOBA], [PESEL]), czarne bloki (██████ - pełne czarne paski w PDF), gwiazdki (maskowanie znakami *) albo własny tekst i szablon (np. [USUNIETO:{TYP}], osobno dla każdej kategorii),
+- co konkretnie zamieniać: włącznik dla każdej kategorii (OSOBA, ADRES, WRAZLIWE, PESEL, NIP, REGON, IBAN, DOWOD, EMAIL, TELEFON), listę fraz "Zawsze zamaskuj" oraz listę "Nigdy nie zamazuj" (np. nazwa własnej firmy).
+6. Instalacja i konfiguracja: projekt ma instalator (install.bat / install.sh) pobierający binaria llama.cpp i modele GGUF z weryfikacją SHA-256 oraz panel Ustawienia zapisujący profil w %LOCALAPPDATA%\KustoszRODO\config.json.
 
-## Szczegółowy opis projektu wraz z efektami wdrożenia *
-1. KONTEKST I PROBLEM WDROŻENIOWY
-Urzędy publikujące decyzje w BIP, sądy, działy kadr, kancelarie prawne oraz placówki medyczne muszą usuwać dane osobowe zgodnie z RODO (art. 25 i 32) przed publikacją lub wysłaniem dokumentów na zewnątrz. Wysłanie surowego pisma do komercyjnego API chmurowego narusza poufność jeszcze przed anonimizacją, natomiast klasyczne wyrażenia regularne zawodzą w języku polskim w dwóch miejscach naraz:
-- nie rozpoznają odmienionych polskich nazwisk i adresów („Anny Zielińskiej”, „Piotra Nowaka”, „astmy oskrzelowej”),
-- albo nadmiarowo zamazują osoby publiczne, nazwy sądów i podstawy prawne („Burmistrz Miasta”, „Sędzia Sądu Rejonowego”, „art. 104 KPA”), czyniąc decyzję BIP nieczytelną.
-Dodatkowo zwykłe „czarne prostokąty” nakładane wizualnie w edytorach PDF nie usuwają warstwy tekstowej pod spodem — dane wciąż można skopiować lub odczytać programowo.
+EFEKTY
+To wczesny prototyp wdrożeniowy - nie ma jeszcze pilotażu u zewnętrznego klienta, więc nie podaję wymyślonych oszczędności w firmie. Zamiast tego zmierzyłem jakość i szybkość na zestawie 12 polskich dokumentów testowych (decyzje BIP, wezwania sądowe, pisma kadrowe, zwolnienia lekarskie, umowy zlecenia, tekst z homoglifami oraz 2 kontrole negatywne z samymi przepisami i urzędami; łącznie 30 encji do ukrycia i 21 elementów kontekstu urzędowego do ochrony):
+- Same wyrażenia regularne i sumy kontrolne: 33,3% wykrytych danych (10/30), 0,0% nadmiarowych maskowań (0/21).
+- Kustosz RODO + Bielik-4.5B-v3 Q6_K (z naprawionym tokenizerem): 90,0% wykrytych danych (27/30), 4,8% nadmiarowych maskowań (1/21), średnio 2,9 s na dokument (GPU Vulkan) oraz 29,0 s na samym CPU (17,9-38,0 s).
+- Kustosz RODO + Gemma-4-E4B-it Q6_K (domyślnie): 96,7% wykrytych danych (29/30; 100% wykrycia encji kontekstowych - jedyny pominięty element to celowo niepoprawny PESEL ze złą sumą kontrolną), 0,0% nadmiarowych maskowań (0/21), średnio 1,1 s na dokument (1137 ms, GPU Vulkan).
+- Koszt API i ruchu do chmury: 0 zł i 0 bajtów wysłanych poza stanowisko pracy. Ręczne szukanie i zaczernianie danych w kilkustronicowym piśmie zajmuje kilkanaście minut; prototyp wykonuje analizę i redakcję PDF/DOCX w ok. 1-3 sekundy na GPU.
 
-2. ARCHITEKTURA ROZWIĄZANIA (100% ON-DEVICE, ZERO CHMURY)
-Linda Kustosz RODO łączy deterministyczną walidację z lokalnym klasyfikatorem SLM (<10B) w pięciu etapach:
-1) Ekstrakcja i kanonizacja dokumentów: obsługa PDF (PyMuPDF), DOCX (python-docx), TXT oraz skanów (Tesseract OCR `pol+eng`). Moduł kanonizacji Unicode usuwa znaki zerowej szerokości, nieciągłe spacje i podstawienia homoglifów (np. cyrylica w tekście łacińskim).
-2) Warstwa deterministyczna i sumy kontrolne: przed przekazaniem treści do modelu system wykrywa i waliduje matematycznie PESEL, NIP, REGON, polski IBAN i numer dowodu osobistego oraz e-mail/telefon. Poprawne identyfikatory są zastępowane tokenami (`<PESEL_1>`, `<IBAN_1>`).
-3) Kontekstowy klasyfikator SLM (Gemma-4-E4B-it Q6_K / Bielik-4.5B-v3 Q6_K): uruchamiany lokalnie przez `llama.cpp` (Vulkan GPU lub CPU). Model zwraca wyłącznie strumień obiektów NDJSON z etykietami do ukrycia (`OSOBA`, `ADRES`, `WRAZLIWE`) oraz do ochrony (`URZEDNIK`, `INSTYTUCJA`, `PRZEPIS`). W przypadku modelu Bielik-4.5B wykorzystano wariant GGUF z naprawionym tokenizerem BPE.
-4) Weryfikacja antyhalucynacyjna i fizyczna redakcja plików: kod w Pythonie sprawdza dosłowne wystąpienie każdego kandydata w tekście źródłowym oraz brak kolizji z listą chronioną. Następnie:
-   - w plikach PDF wykonywane jest prawdziwe usunięcie znaków z warstwy tekstowej (`page.add_redact_annot` + `page.apply_redactions()` w PyMuPDF) z wygenerowaniem gotowego pliku `*_RODO.pdf`,
-   - w plikach DOCX zamiany wykonywane są bezpośrednio w akapitach i tabelach z zachowaniem układu (`*_RODO.docx`),
-   - aplikacja wyświetla obok siebie wizualny podgląd stron dokumentu źródłowego, dokument wynikowy z czerwonymi ramkami/zaczernieniami oraz mapę podświetleń (niebieski: reguły/sumy kontrolne, czerwony: kontekst SLM, zielony: zachowany kontekst urzędowy).
-5) Tryb odwracalny i ślad audytowy: tryb „Anonimizacja BIP / Chmura” wstawia trwałe etykiety (`[OSOBA]`, `[PESEL]`), a tryb „Pseudonimizacja odwracalna” zamienia dane na tokeny `<OSOBA_1>` z lokalnym sejfem mapowań, możliwością przywrócenia oryginału po odpowiedzi zewnętrznego narzędzia oraz skrótami SHA-256 wejścia i wyjścia.
+DLACZEGO SLM (<10B) I WKŁAD DLA BIELIKA
+Bez małego modelu językowego (<10B) klasyczne reguły widzą tylko jedną trzecią danych osobowych w polskich pismach, a przy próbie dopisania kolejnych reguł niszczą sygnatury i nazwiska urzędników. Modele 4-4.5B działają lokalnie na sprzęcie biurowym i rozwiązują problem kontekstu. Dla Bielik-4.5B-v3 wykorzystaliśmy wersję GGUF z poprawionymi metadanymi tokenizera BPE (zgłoszoną wcześniej społeczności: 0/41 -> 41/41 zdań zgodnych z oryginałem). Oba modele (Gemma-4-E4B i Bielik-4.5B) można przełączać w jednym kliknięciu w Ustawieniach.
 
-3. KONFIGURACJA, INSTALACJA I DOSTĘPNOŚĆ
-Projekt zawiera automatyczny instalator (`install.bat` dla Windows oraz `install.sh` + `tools/setup_kustosz.py`), który bez ręcznej konfiguracji pobiera binaria `llama.cpp` (z obsługą GPU Vulkan lub CPU), pobiera wybrane modele GGUF z weryfikacją sumy SHA-256, konfiguruje przenośne ścieżki OCR i zapisuje profil w `%LOCALAPPDATA%\KustoszRODO\config.json`. Z poziomu interfejsu WWW (okno „Ustawienia”) użytkownik może jednym kliknięciem przełączać model (`Gemma-4-E4B-it` / `Bielik-4.5B-v3`), tryb akceleracji (`Auto GPU/CPU`) oraz liczbę wątków CPU.
+OGRANICZENIA
+- Zestaw testowy obejmuje 12 syntetycznych dokumentów; przed wdrożeniem w konkretnym urzędzie lub kancelarii potrzebne są testy na próbce z lokalnego archiwum.
+- W trybie odwracalnym sejf tokenów działa w pamięci aktywnej sesji; trwałe archiwum mapowań między sesjami wymaga szyfrowanego magazynu na dysku odbiorcy.
+- W przypadku Bielika-4.5B zdarzają się pojedyncze niedopasowania odmienionych nazwisk (3/30) lub 1 błędne trafienie kontekstowe (1/21).
 
-4. EFEKTY WDROŻENIA, JAKOŚĆ I KPI (ZMIERZONE NA PROTOYPIE)
-Projekt znajduje się na etapie kompletnego prototypu gotowego do testów lokalnych i webowych (nie wdrożono jeszcze pilotażu w zewnętrznej instytucji). Pomiar jakości i wydajności przeprowadzono na autorskim zestawie 12 polskich dokumentów testowych (decyzje BIP, wezwania sądowe, pisma kadrowe, zwolnienia lekarskie, umowy zlecenia, przypadek uszkodzony homoglifami oraz 2 dokumenty kontrolne bez danych prywatnych; łącznie 30 encji do zamazania i 21 encji urzędowo-prawnych do ochrony):
-- Jakość wykrywania PII (Recall): same reguły/sumy kontrolne osiągnęły **33,3%** (10/30), **Bielik-4.5B-v3 Q6_K** osiągnął **90,0%** (27/30), a domyślna **Gemma-4-E4B-it Q6_K** osiągnęła **96,7%** (29/30 oraz 100% wykrycia wszystkich encji kontekstowych — jedynym pominiętym elementem był celowo błędny numer PESEL bez poprawnej sumy kontrolnej).
-- Ochrona kontekstu urzędowego (False Redact Rate): **0,0%** błędnych zamazań (0/21) na Gemma-4-E4B-it oraz **4,8%** (1/21) na Bielik-4.5B-v3 — nazwy sądów, burmistrzów, sędziów i numery artykułów pozostają czytelne.
-- Czas przetwarzania dokumentu i oszczędność czasu: średnio **1,1 s/dokument** (1137 ms) na GPU Vulkan dla Gemma-4-E4B-it i **2,9 s/dokument** (2943 ms) dla Bielik-4.5B-v3 (~29 s na samym CPU) wobec ręcznego wyszukiwania i zamazywania każdego wystąpienia w edytorze PDF/DOCX trwającego kilkanaście minut na pismo.
-- Bezpieczeństwo i koszt: **0 zł** kosztów licencyjnych i API chmurowych, **0 bajtów** wysłanych poza stanowisko pracy w wersji lokalnej.
+LINKI
+Demo na żywo (Modal T4 GPU): https://ninjagovlad--kustosz-rodo-demo-kustoszservice-web.us-east.modal.run/
+Kod i instalator (GitHub, Apache-2.0): https://github.com/Lendarixon/kustosz-rodo
+Prezentacja PDF: https://ninjagovlad--kustosz-rodo-demo-kustoszservice-web.us-east.modal.run/prezentacja.pdf
 
-5. OGRANICZENIA
-- Zestaw walidacyjny obejmuje 12 syntetycznych dokumentów; przed wdrożeniem w konkretnym urzędzie zalecane są testy na próbce z lokalnego archiwum.
-- W trybie odwracalnym sejf tokenów jest utrzymywany w pamięci aktywnej sesji; trwałe archiwum mapowań między sesjami wymaga szyfrowanego magazynu po stronie odbiorcy.
-
-6. LINKI DO PROJEKTU
-- Demo interaktywne online (Modal T4 GPU): https://ninjagovlad--kustosz-rodo-demo-kustoszservice-web.us-east.modal.run/
-- Kod źródłowy i instalator (GitHub, Apache-2.0): https://github.com/Lendarixon/kustosz-rodo
-- Prezentacja PDF online: https://ninjagovlad--kustosz-rodo-demo-kustoszservice-web.us-east.modal.run/prezentacja.pdf
-
-## Prezentacja (opcjonalnie)
+=== Prezentacja (opcjonalnie) ===
 https://ninjagovlad--kustosz-rodo-demo-kustoszservice-web.us-east.modal.run/prezentacja.pdf

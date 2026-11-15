@@ -62,3 +62,28 @@ def test_pipeline_regex_only():
     assert "[EMAIL]" in rep.masked_text
     assert "[TELEFON]" in rep.masked_text
     assert "art. 25 RODO" in rep.masked_text
+
+
+def test_custom_mask_styles_and_rules():
+    sample = "PESEL 90010100191, e-mail: biuro@firma.pl, kontakt: jan@example.pl, kod: Projekt Alfa."
+    rep_blk = run_pipeline(sample, mode="irreversible", use_slm=False, mask_style="blocks")
+    assert "█" in rep_blk.masked_text
+    assert "90010100191" not in rep_blk.masked_text
+
+    rep_rules = run_pipeline(
+        sample,
+        mode="irreversible",
+        use_slm=False,
+        mask_style="custom",
+        custom_text="[USUNIĘTO:{TYP}]",
+        enabled_kinds=["PESEL", "EMAIL"],
+        kind_replacements={"PESEL": "XXX-PESEL"},
+        custom_mask=["Projekt Alfa"],
+        custom_keep=["biuro@firma.pl"],
+    )
+    assert "XXX-PESEL" in rep_rules.masked_text
+    assert "biuro@firma.pl" in rep_rules.masked_text
+    assert "jan@example.pl" not in rep_rules.masked_text
+    assert "[USUNIĘTO:EMAIL]" in rep_rules.masked_text
+    assert "[USUNIĘTO:WLASNE]" in rep_rules.masked_text
+    assert "Projekt Alfa" not in rep_rules.masked_text

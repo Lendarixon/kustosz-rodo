@@ -33,7 +33,7 @@ def redact_pdf_bytes(pdf_bytes: bytes, redactions: list[RedactionItem], mode: st
         for orig, tok in pairs:
             rects = page.search_for(orig)
             for rect in rects:
-                label = tok if mode == "reversible" else ""
+                label = "" if (mode != "reversible" and tok.startswith("█")) else tok
                 page.add_redact_annot(rect, text=label, fill=(0.08, 0.08, 0.10), text_color=(1, 1, 1), fontsize=8)
                 page_hits += 1
         if page_hits:

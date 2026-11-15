@@ -44,7 +44,14 @@ select{border-radius:var(--r2);width:100%;padding:7px 10px}
 .diff{flex:1;min-height:200px;background:rgba(0,0,0,.24);border:1px solid var(--line);border-radius:var(--r2);padding:12px;font:13.5px/1.7 var(--font);overflow:auto}
 mark.pii-det{background:rgba(47,111,230,.35);border-bottom:2px solid #5b8ff0;color:#fff;padding:1px 4px;border-radius:4px}
 mark.pii-slm{background:rgba(224,86,91,.32);border-bottom:2px solid #e0565b;color:#fff;padding:1px 4px;border-radius:4px}
+mark.pii-user{background:rgba(224,160,58,.32);border-bottom:2px solid #e0a03a;color:#fff;padding:1px 4px;border-radius:4px}
 mark.pii-keep{background:rgba(47,191,143,.24);border-bottom:2px solid #2fbf8f;color:#e6fff6;padding:1px 4px;border-radius:4px}
+.rules-box{border:1px solid var(--line);border-radius:var(--r2);background:rgba(0,0,0,.2);padding:7px 10px;font-size:12px}
+.rules-box summary{cursor:pointer;color:var(--acc2);font-weight:500;user-select:none}
+.rules-grid{display:grid;grid-template-columns:1fr;gap:5px;margin-top:8px;max-height:175px;overflow:auto}
+.rule-row{display:grid;grid-template-columns:auto 1fr 120px;align-items:center;gap:6px;font-size:11.5px;color:var(--mut)}
+.rule-row input[type="text"],.inp-sm{width:100%;padding:4px 7px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--fg);font:inherit;font-size:11.5px}
+.inp-sm{padding:6px 9px;font-size:12.5px}
 .legend{display:flex;gap:6px;font-size:11px;color:var(--mut)}
 .audit{font-size:12px;color:var(--mut);background:rgba(0,0,0,.24);padding:10px 12px;border-radius:var(--r2);border:1px solid var(--line);max-height:175px;overflow:auto;line-height:1.55}
 .chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
@@ -112,10 +119,26 @@ mark.pii-keep{background:rgba(47,191,143,.24);border-bottom:2px solid #2fbf8f;co
         </div>
         <div class="doc-view" id="inDocView" style="display:none;"></div>
         <textarea id="inputText" placeholder="Wgraj plik PDF / DOCX / skan albo wklej tekst dokumentu…"></textarea>
-        <select id="mode">
-          <option value="irreversible">Anonimizacja BIP / Chmura (czarne paski / [OSOBA])</option>
+        <select id="mode" onchange="syncMaskUi()">
+          <option value="irreversible">Anonimizacja nieodwracalna (BIP / Chmura)</option>
           <option value="reversible">Pseudonimizacja odwracalna (&lt;OSOBA_1&gt;, sejf)</option>
         </select>
+        <select id="maskStyle" onchange="syncMaskUi()">
+          <option value="label">Na co: etykiety RODO ([OSOBA], [PESEL])</option>
+          <option value="blocks">Na co: czarne znaki / paski (██████)</option>
+          <option value="stars">Na co: gwiazdki (******)</option>
+          <option value="custom">Na co: własny tekst lub szablon…</option>
+        </select>
+        <input id="customMaskText" class="inp-sm" type="text" style="display:none;" placeholder="Wpisz własny zamiennik, np. [USUNIĘTO] lub [RODO:{TYP}]">
+        <details class="rules-box" id="rulesBox">
+          <summary>Reguły: co konkretnie i na co zamieniać</summary>
+          <div class="rules-grid" id="rulesGrid"></div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
+            <input id="customMaskList" class="inp-sm" type="text" placeholder="Zawsze zamaskuj (frazy po przecinku)">
+            <input id="customKeepList" class="inp-sm" type="text" placeholder="Nigdy nie zamazuj (wyjątki po przecinku)">
+            <button class="btn" id="saveRulesBtn" style="display:none;padding:4px 9px;font-size:11.5px;" onclick="saveRulesOnly()">Zapisz reguły w ustawieniach</button>
+          </div>
+        </details>
         <label style="font-size:12px;color:var(--mut);display:flex;align-items:center;gap:7px;">
           <input type="checkbox" id="useSlm" checked> Klasyfikacja kontekstowa SLM (osoby prywatne vs urzędnicy)
         </label>
@@ -160,6 +183,69 @@ mark.pii-keep{background:rgba(47,191,143,.24);border-bottom:2px solid #2fbf8f;co
 <script>
 let currentDocId = null;
 let lastVault = {};
+
+const KIND_DEFS = [
+  ['OSOBA', 'Osoby prywatne (OSOBA)'],
+  ['ADRES', 'Adresy prywatne (ADRES)'],
+  ['WRAZLIWE', 'Zdrowie / zarobki (WRAZLIWE)'],
+  ['PESEL', 'Numer PESEL'],
+  ['NIP', 'Numer NIP'],
+  ['REGON', 'Numer REGON'],
+  ['IBAN', 'Konto bankowe (IBAN)'],
+  ['DOWOD', 'Dowód osobisty'],
+  ['EMAIL', 'Adres e-mail'],
+  ['TELEFON', 'Numer telefonu']
+];
+
+function initRulesGrid(){
+  document.getElementById('rulesGrid').innerHTML = KIND_DEFS.map(([k, lbl])=>`
+    <div class="rule-row">
+      <input type="checkbox" class="kind-cb" data-kind="${k}" checked>
+      <span>${lbl}</span>
+      <input type="text" class="kind-repl" data-kind="${k}" placeholder="domyślnie">
+    </div>`).join('');
+}
+initRulesGrid();
+
+function syncMaskUi(){
+  const rev = document.getElementById('mode').value === 'reversible';
+  const st = document.getElementById('maskStyle');
+  st.style.display = rev ? 'none' : 'block';
+  document.getElementById('customMaskText').style.display = (!rev && st.value === 'custom') ? 'block' : 'none';
+}
+syncMaskUi();
+
+function collectRules(){
+  const enabled_kinds = [...document.querySelectorAll('.kind-cb:checked')].map(el=>el.dataset.kind);
+  const kind_replacements = {};
+  document.querySelectorAll('.kind-repl').forEach(el=>{
+    if(el.value.trim()) kind_replacements[el.dataset.kind] = el.value.trim();
+  });
+  const splitList = id => document.getElementById(id).value.split(',').map(s=>s.trim()).filter(Boolean);
+  return {
+    mask_style: document.getElementById('maskStyle').value,
+    custom_text: document.getElementById('customMaskText').value,
+    enabled_kinds,
+    kind_replacements,
+    custom_mask: splitList('customMaskList'),
+    custom_keep: splitList('customKeepList')
+  };
+}
+
+function applyRulesToUi(rules){
+  if(!rules) return;
+  if(rules.mask_style) document.getElementById('maskStyle').value = rules.mask_style;
+  document.getElementById('customMaskText').value = rules.custom_text || '';
+  if(Array.isArray(rules.enabled_kinds)){
+    const s = new Set(rules.enabled_kinds);
+    document.querySelectorAll('.kind-cb').forEach(cb=>{ cb.checked = s.has(cb.dataset.kind); });
+  }
+  const rep = rules.kind_replacements || {};
+  document.querySelectorAll('.kind-repl').forEach(el=>{ el.value = rep[el.dataset.kind] || ''; });
+  document.getElementById('customMaskList').value = (rules.custom_mask || []).join(', ');
+  document.getElementById('customKeepList').value = (rules.custom_keep || []).join(', ');
+  syncMaskUi();
+}
 
 function renderPages(el, pagesB64){
   el.innerHTML = pagesB64.map((b,i)=>`<img class="doc-page" src="data:image/png;base64,${b}" alt="Strona ${i+1}">`).join('');
@@ -241,9 +327,11 @@ fetch('/api/status').then(r=>r.json()).then(d=>{
   document.getElementById('status').textContent = `${d.model} · ${d.device}`;
   if(d.settings){
     document.getElementById('cfgBtn').style.display = 'inline-flex';
+    document.getElementById('saveRulesBtn').style.display = 'inline-flex';
     document.getElementById('cfgModel').value = d.settings.model || 'gemma';
     document.getElementById('cfgGpu').value = d.settings.gpu || 'auto';
     document.getElementById('cfgThreads').value = d.settings.threads || 8;
+    applyRulesToUi(d.settings.rules);
   }
 }).catch(()=>{ document.getElementById('status').textContent = 'Błąd połączenia z modelem'; });
 
@@ -258,7 +346,8 @@ async function saveSettings(){
       body: JSON.stringify({
         model: document.getElementById('cfgModel').value,
         gpu: document.getElementById('cfgGpu').value,
-        threads: parseInt(document.getElementById('cfgThreads').value, 10) || 8
+        threads: parseInt(document.getElementById('cfgThreads').value, 10) || 8,
+        rules: collectRules()
       })
     });
     const d = await r.json();
@@ -269,11 +358,28 @@ async function saveSettings(){
   finally { btn.disabled = false; btn.textContent = 'Zapisz i przeładuj model'; }
 }
 
+async function saveRulesOnly(){
+  const btn = document.getElementById('saveRulesBtn');
+  btn.disabled = true; btn.textContent = 'Zapisuję…';
+  try{
+    const r = await fetch('/api/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ rules: collectRules() })
+    });
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.error || 'Błąd zapisu');
+    btn.textContent = 'Zapisano';
+    setTimeout(()=>{ btn.textContent = 'Zapisz reguły w ustawieniach'; }, 1200);
+  } catch(e) { alert(e.message); }
+  finally { btn.disabled = false; }
+}
+
 loadSample('decyzja_BIP.pdf');
 
 async function runAnon(){
   const btn = document.getElementById('runBtn');
   btn.disabled = true; btn.textContent = 'Anonimizuję lokalnie…';
+  const rules = collectRules();
   try{
     const r = await fetch('/api/anonymize', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -281,7 +387,8 @@ async function runAnon(){
         doc_id: currentDocId,
         text: document.getElementById('inputText').value,
         mode: document.getElementById('mode').value,
-        use_slm: document.getElementById('useSlm').checked
+        use_slm: document.getElementById('useSlm').checked,
+        ...rules
       })
     });
     const d = await r.json();

@@ -18,6 +18,12 @@ class AnonReq(BaseModel):
     mode: str = "irreversible"
     use_slm: bool = True
     doc_id: str | None = None
+    mask_style: str = "label"
+    custom_text: str = ""
+    enabled_kinds: list[str] | None = None
+    custom_mask: list[str] = []
+    custom_keep: list[str] = []
+    kind_replacements: dict[str, str] = {}
 
 
 class RestoreReq(BaseModel):
@@ -93,7 +99,17 @@ def build_app(classify_fn, model_file: str) -> FastAPI:
 
     @api.post("/api/anonymize")
     def anonymize(req: AnonReq):
-        rep = pl.run_pipeline(req.text, mode=req.mode, use_slm=req.use_slm)
+        rep = pl.run_pipeline(
+            req.text,
+            mode=req.mode,
+            use_slm=req.use_slm,
+            mask_style=req.mask_style,
+            custom_text=req.custom_text,
+            enabled_kinds=req.enabled_kinds,
+            custom_mask=req.custom_mask,
+            custom_keep=req.custom_keep,
+            kind_replacements=req.kind_replacements,
+        )
         res_id = uuid.uuid4().hex[:12]
         out_pages_b64 = None
         out_doc_html = None
