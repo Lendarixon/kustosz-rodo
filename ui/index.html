@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Linda Kustosz RODO — Lokalna anonimizacja dokumentów</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0c11;--panel:rgba(20,23,31,.78);--panel2:rgba(255,255,255,.045);--hover:rgba(255,255,255,.09);--line:rgba(255,255,255,.09);
+--fg:#eceff4;--mut:#b4bac6;--dim:#8e97a8;--acc:#2f6fe6;--acc2:#5b8ff0;--ok:#2fbf8f;--bad:#e0565b;--warn:#e0a03a;
+--r:12px;--r2:8px;--font:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;--disp:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;color:var(--fg);font:14px/1.5 var(--font);overflow:hidden;background-color:var(--bg);
+  background-image:radial-gradient(900px 520px at 88% -12%,rgba(47,111,230,.17),transparent 62%),radial-gradient(760px 520px at -8% 112%,rgba(0,150,160,.11),transparent 60%),
+  repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 3px)}
+.shell{display:grid;grid-template-rows:56px minmax(0,1fr);height:100vh}
+.bar{display:flex;align-items:center;gap:12px;padding:0 18px}
+.bar .nm{font:300 21px/1 var(--disp);letter-spacing:-.01em}
+.bar .nb{color:var(--mut);font-size:13px;padding:4px 10px;border-left:1px solid var(--line)}
+.bar .sp{flex:1}
+.pill{font-size:12px;color:var(--mut);padding:5px 12px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;gap:7px}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.cols{display:grid;grid-template-columns:1.05fr 1fr 1.05fr;gap:12px;padding:0 12px 12px;min-height:0}
+.pane{background:var(--panel);backdrop-filter:blur(12px) saturate(1.15);-webkit-backdrop-filter:blur(12px) saturate(1.15);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ph{display:flex;align-items:center;gap:8px;padding:10px 14px;min-height:48px;border-bottom:1px solid var(--line)}
+.ph h2{font:500 14.5px/1 var(--font);margin:0;flex:1}
+.body{padding:12px 14px;display:flex;flex-direction:column;gap:10px;flex:1;min-height:0;overflow:auto}
+.drop{border:1.5px dashed rgba(91,143,240,.4);border-radius:var(--r2);padding:11px 12px;text-align:center;cursor:pointer;background:rgba(47,111,230,.06);transition:.15s;font-size:12.5px;color:var(--mut)}
+.drop:hover,.drop.over{background:rgba(47,111,230,.14);border-color:var(--acc2);color:var(--fg)}
+.drop b{color:var(--acc2);font-weight:600}
+textarea{width:100%;flex:1;min-height:180px;background:rgba(0,0,0,.28);color:var(--fg);border:1px solid var(--line);border-radius:var(--r2);padding:10px 12px;font:13px/1.55 ui-monospace,Consolas,monospace;resize:none}
+textarea:focus,select:focus{outline:2px solid var(--acc2);outline-offset:1px}
+select,.btn,a.btn{font:inherit;color:var(--fg);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12.5px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+select{border-radius:var(--r2);width:100%;padding:7px 10px}
+.btn:hover,a.btn:hover{background:var(--hover)}.btn.pri,a.btn.pri{background:var(--acc);border-color:transparent;color:#fff;font-weight:600}.btn.pri:hover,a.btn.pri:hover{background:#255ec7}
+.btn:disabled{opacity:.5;cursor:wait}
+.samples{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.samples .btn{border-radius:var(--r2);font-size:12px;padding:6px 8px;justify-content:flex-start}
+.doc-view{flex:1;min-height:220px;background:rgba(0,0,0,.24);border:1px solid var(--line);border-radius:var(--r2);padding:10px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.doc-page{width:100%;border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,.45);background:#fff}
+.doc-sheet{background:#f8fafc;color:#0f172a;padding:18px 20px;border-radius:6px;font:13.5px/1.6 "Segoe UI",system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35)}
+.doc-sheet h3,.doc-sheet h4{margin:0 0 8px;color:#020617}.doc-sheet p{margin:0 0 8px}
+.doc-tbl{width:100%;border-collapse:collapse;margin:8px 0;font-size:12.5px}
+.doc-tbl td{border:1px solid #cbd5e1;padding:5px 8px}
+.diff{flex:1;min-height:200px;background:rgba(0,0,0,.24);border:1px solid var(--line);border-radius:var(--r2);padding:12px;font:13.5px/1.7 var(--font);overflow:auto}
+mark.pii-det{background:rgba(47,111,230,.35);border-bottom:2px solid #5b8ff0;color:#fff;padding:1px 4px;border-radius:4px}
+mark.pii-slm{background:rgba(224,86,91,.32);border-bottom:2px solid #e0565b;color:#fff;padding:1px 4px;border-radius:4px}
+mark.pii-keep{background:rgba(47,191,143,.24);border-bottom:2px solid #2fbf8f;color:#e6fff6;padding:1px 4px;border-radius:4px}
+.legend{display:flex;gap:6px;font-size:11px;color:var(--mut)}
+.audit{font-size:12px;color:var(--mut);background:rgba(0,0,0,.24);padding:10px 12px;border-radius:var(--r2);border:1px solid var(--line);max-height:175px;overflow:auto;line-height:1.55}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.chip{font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--fg)}
+.chip.ok{border-color:rgba(47,191,143,.45);color:#7ef0c7}
+.vault-wrap{display:none;flex-direction:column;gap:5px;max-height:145px;overflow:auto;background:rgba(0,0,0,.24);border:1px solid var(--line);border-radius:var(--r2);padding:8px}
+.vault-tbl{width:100%;border-collapse:collapse;font-size:11.5px;font-family:ui-monospace,Consolas,monospace}
+.vault-tbl td{padding:3px 6px;border-bottom:1px solid var(--line);color:var(--mut)}
+.vault-tbl td:first-child{color:var(--acc2);white-space:nowrap}
+.err-box{padding:10px 12px;border-radius:var(--r2);background:rgba(224,86,91,.16);border:1px solid rgba(224,86,91,.5);color:#fecaca;font-size:12.5px}
+.foot{border-top:1px solid var(--line);padding:8px 14px;color:var(--dim);font-size:11.5px;display:flex;justify-content:space-between}
+@media(max-width:1100px){.cols{grid-template-columns:1fr;overflow:auto}body{overflow:auto}.shell{height:auto}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="bar">
+    <div class="nm">Linda <span style="color:var(--acc2);font-weight:400;">Kustosz RODO</span></div>
+    <div class="nb">Lokalna anonimizacja PDF, DOCX i skanów</div>
+    <div class="sp"></div>
+    <button class="btn" id="cfgBtn" style="display:none;" onclick="openSettings()">Ustawienia</button>
+    <div class="pill"><i></i><span id="status">Łączenie z modelem…</span></div>
+  </header>
+  <div id="cfgModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;align-items:center;justify-content:center;">
+    <div class="pane" style="width:380px;max-width:92vw;padding:18px;gap:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <strong style="font-size:15px;">Ustawienia lokalnego silnika</strong>
+        <button class="btn" style="padding:3px 9px;" onclick="closeSettings()">✕</button>
+      </div>
+      <label style="font-size:12.5px;color:var(--mut);">Model SLM (&lt;10B)
+        <select id="cfgModel" style="margin-top:4px;">
+          <option value="gemma">Gemma-4-E4B-it Q6_K (domyślny)</option>
+          <option value="bielik">Bielik-4.5B-v3.0-Instruct Q6_K</option>
+        </select>
+      </label>
+      <label style="font-size:12.5px;color:var(--mut);">Akceleracja sprzętowa
+        <select id="cfgGpu" style="margin-top:4px;">
+          <option value="auto">Auto (GPU Vulkan / CPU)</option>
+          <option value="cpu">Tylko procesor (CPU)</option>
+        </select>
+      </label>
+      <label style="font-size:12.5px;color:var(--mut);">Liczba wątków CPU
+        <input id="cfgThreads" type="number" min="1" max="64" value="8" style="margin-top:4px;width:100%;padding:7px 10px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);color:var(--fg);">
+      </label>
+      <button class="btn pri" id="saveCfgBtn" onclick="saveSettings()">Zapisz i przeładuj model</button>
+    </div>
+  </div>
+
+  <div class="cols">
+    <section class="pane">
+      <div class="ph">
+        <h2>1. Dokument źródłowy</h2>
+        <button class="btn" id="toggleInBtn" style="display:none;padding:4px 10px;font-size:11.5px;" onclick="toggleInView()">Pokaż tekst</button>
+      </div>
+      <div class="body">
+        <input type="file" id="fileInput" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg" style="display:none">
+        <div class="drop" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <b>Wybierz plik z dysku</b> lub przeciągnij tutaj (PDF, DOCX, TXT, skan)
+        </div>
+        <div class="samples">
+          <button class="btn" onclick="loadSample('decyzja_BIP.pdf')">Decyzja BIP (PDF)</button>
+          <button class="btn" onclick="loadSample('zwolnienie_kadry.docx')">Kadry ZUS (DOCX)</button>
+          <button class="btn" onclick="loadSample('wezwanie_sad.pdf')">Wezwanie sądowe (PDF)</button>
+          <button class="btn" onclick="loadSample('umowa_zlecenie.docx')">Umowa zlecenie (DOCX)</button>
+        </div>
+        <div class="doc-view" id="inDocView" style="display:none;"></div>
+        <textarea id="inputText" placeholder="Wgraj plik PDF / DOCX / skan albo wklej tekst dokumentu…"></textarea>
+        <select id="mode">
+          <option value="irreversible">Anonimizacja BIP / Chmura (czarne paski / [OSOBA])</option>
+          <option value="reversible">Pseudonimizacja odwracalna (&lt;OSOBA_1&gt;, sejf)</option>
+        </select>
+        <label style="font-size:12px;color:var(--mut);display:flex;align-items:center;gap:7px;">
+          <input type="checkbox" id="useSlm" checked> Klasyfikacja kontekstowa SLM (osoby prywatne vs urzędnicy)
+        </label>
+        <button class="btn pri" id="runBtn" onclick="runAnon()">Anonimizuj dokument</button>
+      </div>
+      <div class="foot"><span id="inFileInfo">Ładowanie przykładu…</span><span>RODO art. 25 / 32</span></div>
+    </section>
+
+    <section class="pane">
+      <div class="ph">
+        <h2>2. Analiza i kontekst RODO</h2>
+        <div class="legend">
+          <span><mark class="pii-det">Suma</mark></span>
+          <span><mark class="pii-slm">SLM</mark></span>
+          <span><mark class="pii-keep">Zachowano</mark></span>
+        </div>
+      </div>
+      <div class="body">
+        <div class="diff" id="diffView">Kliknij „Anonimizuj dokument”, aby zobaczyć wykryte dane osobowe oraz zachowany kontekst prawny i urzędowy.</div>
+        <div class="audit" id="auditBox">Raport audytu SHA-256 pojawi się po analizie dokumentu.</div>
+      </div>
+    </section>
+
+    <section class="pane">
+      <div class="ph">
+        <h2>3. Dokument po anonimizacji</h2>
+        <a class="btn pri" id="dlBtn" style="display:none;padding:4px 10px;font-size:12px;" download>Pobierz</a>
+        <button class="btn" style="padding:4px 10px;font-size:12px;" onclick="copyOut()">Kopiuj</button>
+        <button class="btn" id="restoreBtn" style="padding:4px 10px;font-size:12px;display:none;" onclick="runRestore()">Odwróć</button>
+      </div>
+      <div class="body">
+        <div class="doc-view" id="outDocView" style="display:none;"></div>
+        <textarea id="outputText" placeholder="Tutaj pojawi się gotowy dokument po anonimizacji…"></textarea>
+        <div class="vault-wrap" id="vaultWrap">
+          <div style="font-size:11.5px;color:var(--mut);font-weight:600;">Lokalny sejf pseudonimów (odwracalny)</div>
+          <table class="vault-tbl" id="vaultTbl"></table>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<script>
+let currentDocId = null;
+let lastVault = {};
+
+function renderPages(el, pagesB64){
+  el.innerHTML = pagesB64.map((b,i)=>`<img class="doc-page" src="data:image/png;base64,${b}" alt="Strona ${i+1}">`).join('');
+}
+
+function showInDoc(hasRich){
+  document.getElementById('inDocView').style.display = hasRich ? 'flex' : 'none';
+  document.getElementById('inputText').style.display = hasRich ? 'none' : 'block';
+  document.getElementById('toggleInBtn').style.display = hasRich ? 'inline-flex' : 'none';
+  document.getElementById('toggleInBtn').textContent = hasRich ? 'Pokaż tekst' : 'Pokaż dokument';
+}
+
+function toggleInView(){
+  const dv = document.getElementById('inDocView');
+  const tx = document.getElementById('inputText');
+  const isDoc = dv.style.display !== 'none';
+  dv.style.display = isDoc ? 'none' : 'flex';
+  tx.style.display = isDoc ? 'block' : 'none';
+  document.getElementById('toggleInBtn').textContent = isDoc ? 'Pokaż dokument' : 'Pokaż tekst';
+}
+
+function applyLoadedDoc(d){
+  currentDocId = d.doc_id;
+  document.getElementById('inputText').value = d.text || '';
+  document.getElementById('inFileInfo').textContent = `${d.filename} (${d.meta?.pages||1} str.)`;
+  const inView = document.getElementById('inDocView');
+  if(d.pages_b64 && d.pages_b64.length){
+    renderPages(inView, d.pages_b64);
+    showInDoc(true);
+  } else if(d.doc_html){
+    inView.innerHTML = d.doc_html;
+    showInDoc(true);
+  } else {
+    showInDoc(false);
+  }
+  document.getElementById('outDocView').style.display = 'none';
+  document.getElementById('outputText').style.display = 'block';
+  document.getElementById('outputText').value = '';
+  document.getElementById('dlBtn').style.display = 'none';
+  document.getElementById('restoreBtn').style.display = 'none';
+  document.getElementById('vaultWrap').style.display = 'none';
+}
+
+async function loadSample(fname){
+  try {
+    const r = await fetch(`/api/sample/${encodeURIComponent(fname)}`);
+    const d = await r.json();
+    if(!r.ok || d.error){ throw new Error(d.error || `HTTP ${r.status}`); }
+    applyLoadedDoc(d);
+  } catch(err) {
+    document.getElementById('diffView').innerHTML = `<div class="err-box">Nie udało się wczytać przykładu: ${err.message}</div>`;
+  }
+}
+
+async function uploadFile(f){
+  if(!f) return;
+  const dz = document.getElementById('dropZone');
+  dz.innerHTML = `Wczytywanie pliku <b>${f.name}</b>…`;
+  try {
+    const fd = new FormData(); fd.append('file', f);
+    const r = await fetch('/api/upload', {method:'POST', body:fd});
+    const d = await r.json();
+    if(!r.ok || d.error){ throw new Error(d.error || `HTTP ${r.status}`); }
+    applyLoadedDoc(d);
+    dz.innerHTML = `Wczytano: <b>${d.filename}</b> · kliknij lub przeciągnij inny plik`;
+  } catch(err) {
+    dz.innerHTML = `<b>Wybierz plik z dysku</b> lub przeciągnij tutaj (PDF, DOCX, TXT, skan)`;
+    document.getElementById('diffView').innerHTML = `<div class="err-box">Błąd wczytywania pliku: ${err.message}</div>`;
+  }
+}
+
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e=>{ e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', ()=> dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e=>{ e.preventDefault(); dropZone.classList.remove('over'); uploadFile(e.dataTransfer.files[0]); });
+document.getElementById('fileInput').addEventListener('change', e=> uploadFile(e.target.files[0]));
+
+fetch('/api/status').then(r=>r.json()).then(d=>{
+  document.getElementById('status').textContent = `${d.model} · ${d.device}`;
+  if(d.settings){
+    document.getElementById('cfgBtn').style.display = 'inline-flex';
+    document.getElementById('cfgModel').value = d.settings.model || 'gemma';
+    document.getElementById('cfgGpu').value = d.settings.gpu || 'auto';
+    document.getElementById('cfgThreads').value = d.settings.threads || 8;
+  }
+}).catch(()=>{ document.getElementById('status').textContent = 'Błąd połączenia z modelem'; });
+
+function openSettings(){ document.getElementById('cfgModal').style.display = 'flex'; }
+function closeSettings(){ document.getElementById('cfgModal').style.display = 'none'; }
+async function saveSettings(){
+  const btn = document.getElementById('saveCfgBtn');
+  btn.disabled = true; btn.textContent = 'Przeładowuję model…';
+  try{
+    const r = await fetch('/api/settings', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model: document.getElementById('cfgModel').value,
+        gpu: document.getElementById('cfgGpu').value,
+        threads: parseInt(document.getElementById('cfgThreads').value, 10) || 8
+      })
+    });
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.error || 'Błąd zapisu');
+    document.getElementById('status').textContent = `${d.model} · ${d.device}`;
+    closeSettings();
+  } catch(e) { alert(e.message); }
+  finally { btn.disabled = false; btn.textContent = 'Zapisz i przeładuj model'; }
+}
+
+loadSample('decyzja_BIP.pdf');
+
+async function runAnon(){
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true; btn.textContent = 'Anonimizuję lokalnie…';
+  try{
+    const r = await fetch('/api/anonymize', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        doc_id: currentDocId,
+        text: document.getElementById('inputText').value,
+        mode: document.getElementById('mode').value,
+        use_slm: document.getElementById('useSlm').checked
+      })
+    });
+    const d = await r.json();
+    if(!r.ok || d.error || d.masked_text === undefined){
+      throw new Error(d.detail || d.error || `Błąd serwera (HTTP ${r.status})`);
+    }
+    document.getElementById('diffView').innerHTML = d.highlighted_html || '';
+    document.getElementById('outputText').value = d.masked_text || '';
+
+    const outView = document.getElementById('outDocView');
+    const outTxt = document.getElementById('outputText');
+    if(d.out_pages_b64 && d.out_pages_b64.length){
+      renderPages(outView, d.out_pages_b64);
+      outView.style.display = 'flex'; outTxt.style.display = 'none';
+    } else if(d.out_doc_html){
+      outView.innerHTML = d.out_doc_html;
+      outView.style.display = 'flex'; outTxt.style.display = 'none';
+    } else {
+      outView.style.display = 'none'; outTxt.style.display = 'block';
+    }
+
+    const dl = document.getElementById('dlBtn');
+    if(d.download_url){
+      dl.href = d.download_url; dl.download = d.download_name || 'wynik';
+      dl.textContent = `Pobierz (${d.download_name})`; dl.style.display = 'inline-flex';
+    }
+
+    lastVault = d.vault || {};
+    const entries = Object.entries(lastVault);
+    document.getElementById('restoreBtn').style.display = entries.length ? 'inline-flex' : 'none';
+    document.getElementById('vaultWrap').style.display = entries.length ? 'flex' : 'none';
+    document.getElementById('vaultTbl').innerHTML = entries.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+
+    const cntChips = Object.entries(d.counts||{}).map(([k,v])=>`<span class="chip">${k}: ${v}</span>`).join('');
+    const keepChips = (d.kept||[]).map(k=>`<span class="chip ok">${k.text} (${k.role})</span>`).join('');
+    document.getElementById('auditBox').innerHTML =
+      `<div class="chips">${cntChips || '<span class="chip">Brak PII</span>'}${keepChips}</div>` +
+      `<b>Czas SLM:</b> ${d.slm_latency_ms} ms · <b>Redakcje w pliku:</b> ${d.doc_redactions||0}<br>` +
+      `<b>SHA-256:</b> ${(d.doc_sha256||'').slice(0,16)}… → ${(d.masked_sha256||'').slice(0,16)}…`;
+  } catch(err) {
+    document.getElementById('diffView').innerHTML = `<div class="err-box">Błąd anonimizacji: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Anonimizuj dokument';
+  }
+}
+
+async function runRestore(){
+  const r = await fetch('/api/restore', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({masked_text:document.getElementById('outputText').value, vault:lastVault})
+  });
+  const d = await r.json();
+  document.getElementById('outDocView').style.display = 'none';
+  document.getElementById('outputText').style.display = 'block';
+  document.getElementById('outputText').value = d.restored_text || '';
+}
+
+function copyOut(){ navigator.clipboard.writeText(document.getElementById('outputText').value); }
+</script>
+</body>
+</html>

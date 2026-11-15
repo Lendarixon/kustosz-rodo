@@ -1,0 +1,13 @@
+models/
+bin/
+state/
+build/
+dist/
+__pycache__/
+*.pyc
+*.part
+*.log
+config.json
+.pytest_cache/
+bench/eval_report.json
+tools/_deck.html
